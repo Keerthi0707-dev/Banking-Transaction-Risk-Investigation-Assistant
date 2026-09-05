@@ -7,56 +7,65 @@
   <link rel="stylesheet" href="/static/style.css">
   <!-- Markdown parser for rendering AI Investigation Reports -->
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <!-- Chart.js for Interactive Animated Financial Visualizations -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
+
+  <!-- Ambient Glowing Background Mesh -->
+  <div class="bg-glow-mesh"></div>
 
   <!-- Navbar Header -->
   <header class="navbar">
     <div class="brand">
-      <div class="brand-logo">FD</div>
+      <div class="brand-logo">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+      </div>
       <div>
         <div class="brand-title">FraudDesk AI Assistant</div>
-        <span class="track-badge">TRACK_ID=PS06 • Banking Transaction Risk</span>
+        <span class="track-badge shimmer">TRACK_ID=PS06 • Banking Risk Intelligence</span>
       </div>
     </div>
     <div class="nav-actions">
       <div class="status-pill">
-        <span class="status-dot"></span>
+        <span class="status-dot pulsing"></span>
         <span id="gemini-status">Gemini AI Grounded</span>
       </div>
-      <button class="btn-primary" onclick="openCustomModal()">+ Custom Ledger Sandbox</button>
+      <button class="btn-primary glow-button" onclick="openCustomModal()">
+        <span>+ Custom Ledger Sandbox</span>
+      </button>
     </div>
   </header>
 
   <main class="dashboard-container">
     
-    <!-- Top Overview Stats -->
+    <!-- Top Overview Stats Grid -->
     <section class="stats-grid">
-      <div class="stat-card">
+      <div class="stat-card glass-card">
         <div class="stat-info">
           <div class="stat-label">Total Accounts</div>
-          <div class="stat-value" id="stat-total-accounts">5</div>
+          <div class="stat-value count-up" id="stat-total-accounts">5</div>
         </div>
         <div class="stat-icon blue">🏦</div>
       </div>
-      <div class="stat-card">
+      <div class="stat-card glass-card">
         <div class="stat-info">
           <div class="stat-label">Routine / Clean</div>
-          <div class="stat-value" id="stat-clean-accounts">1</div>
+          <div class="stat-value count-up" id="stat-clean-accounts">1</div>
         </div>
         <div class="stat-icon green">✅</div>
       </div>
-      <div class="stat-card">
+      <div class="stat-card glass-card">
         <div class="stat-info">
           <div class="stat-label">High Risk Flags</div>
-          <div class="stat-value" id="stat-flagged-accounts">3</div>
+          <div class="stat-value count-up" id="stat-flagged-accounts">3</div>
         </div>
         <div class="stat-icon red">⚠️</div>
       </div>
-      <div class="stat-card">
+      <div class="stat-card glass-card">
         <div class="stat-info">
           <div class="stat-label">Needs Escalation</div>
-          <div class="stat-value" id="stat-escalated-accounts">1</div>
+          <div class="stat-value count-up" id="stat-escalated-accounts">1</div>
         </div>
         <div class="stat-icon purple">⚖️</div>
       </div>
@@ -77,7 +86,7 @@
         </div>
 
         <!-- Selected Customer Baseline Card -->
-        <div class="panel-card" style="margin-top: 0.5rem;" id="baseline-summary-card">
+        <div class="panel-card glass-card" style="margin-top: 0.5rem;" id="baseline-summary-card">
           <div class="panel-header">
             <h3 style="font-size: 0.95rem; font-weight: 600;">Customer Baseline Profile</h3>
             <span class="customer-id" id="baseline-cid">CUST-101</span>
@@ -91,64 +100,137 @@
       <!-- Right Column: AI Risk Investigation Workspace -->
       <div class="investigation-panel">
 
-        <!-- Executive Determination Banner -->
+        <!-- Executive Determination Banner with Animated Risk Gauge -->
         <div class="determination-banner clean" id="determination-banner">
           <div class="determination-text">
+            <div class="banner-status-chip" id="banner-status-chip">ROUTINE BASELINE</div>
             <h3 id="det-title">NO SUSPICIOUS ACTIVITY DETECTED</h3>
             <p id="det-subtitle">Account activity is consistent with historical baseline spending patterns.</p>
           </div>
-          <div class="score-badge" id="det-score">0 / 100</div>
+          
+          <!-- Animated SVG Radial Risk Gauge -->
+          <div class="gauge-container">
+            <svg class="gauge-svg" viewBox="0 0 100 100">
+              <circle class="gauge-bg" cx="50" cy="50" r="40"/>
+              <circle class="gauge-fill" id="gauge-fill-circle" cx="50" cy="50" r="40" stroke-dasharray="251.2" stroke-dashoffset="251.2"/>
+            </svg>
+            <div class="gauge-value">
+              <span id="det-score-val">0</span>
+              <span class="gauge-denom">/100</span>
+            </div>
+          </div>
         </div>
 
         <!-- Triggered Rules Section -->
-        <div class="panel-card hidden" id="rules-card">
+        <div class="panel-card glass-card hidden" id="rules-card">
           <div class="panel-header">
             <h3>Triggered Risk Rules & Direct Evidence</h3>
-            <span class="track-badge" id="rule-count-badge">0 Rules Hit</span>
+            <span class="track-badge pulse-badge" id="rule-count-badge">0 Rules Hit</span>
           </div>
           <div class="rules-container" id="rules-list">
             <!-- Rules dynamically populated -->
           </div>
         </div>
 
-        <!-- Transaction Ledger Table -->
-        <div class="panel-card">
-          <div class="panel-header">
-            <h3>Customer Transaction History Ledger</h3>
-            <span style="font-size: 0.8rem; color: var(--text-muted);" id="txn-ledger-count">0 Transactions</span>
+        <!-- Tabbed Studio Controls -->
+        <div class="studio-tabs">
+          <button class="tab-btn active" id="tab-btn-charts" onclick="switchTab('charts')">📈 Visual Analytics & Flow</button>
+          <button class="tab-btn" id="tab-btn-ledger" onclick="switchTab('ledger')">📋 Transaction Ledger</button>
+          <button class="tab-btn" id="tab-btn-report" onclick="switchTab('report')">🤖 AI Report (Gemini)</button>
+          <button class="tab-btn" id="tab-btn-audit" onclick="switchTab('audit')">📜 Audit Log</button>
+        </div>
+
+        <!-- TAB 1: Visual Analytics & Flow -->
+        <div class="tab-content" id="tab-charts">
+          <div class="charts-grid">
+            <div class="panel-card glass-card chart-card">
+              <div class="panel-header">
+                <h3>Spending Anomaly & Velocity Timeline</h3>
+                <span class="chart-subtitle">Historical Baseline vs Outlier Spikes</span>
+              </div>
+              <div class="chart-wrapper">
+                <canvas id="timelineChart"></canvas>
+              </div>
+            </div>
+
+            <div class="panel-card glass-card chart-card">
+              <div class="panel-header">
+                <h3>Time-of-Day Transaction Hours</h3>
+                <span class="chart-subtitle">Odd-Hours (01:00-05:00 AM) Alert Zone</span>
+              </div>
+              <div class="chart-wrapper">
+                <canvas id="hoursChart"></canvas>
+              </div>
+            </div>
           </div>
-          <div class="table-responsive">
-            <table class="ledger-table">
-              <thead>
-                <tr>
-                  <th>Txn ID</th>
-                  <th>Date & Time</th>
-                  <th>Description / Payee</th>
-                  <th>Channel</th>
-                  <th>Amount</th>
-                  <th>Status</th>
-                </tr>
-              </thead>
-              <tbody id="ledger-table-body">
-                <!-- Ledger rows populated dynamically -->
-              </tbody>
-            </table>
+
+          <!-- Network Flow Graphic Card -->
+          <div class="panel-card glass-card" style="margin-top: 1rem;">
+            <div class="panel-header">
+              <h3>Beneficiary Transfer Topology & Channel Graph</h3>
+              <span class="track-badge">Visual Evidence Network</span>
+            </div>
+            <div class="network-graph-container" id="network-graph-view">
+              <!-- SVG Node-Link Diagram dynamically rendered -->
+            </div>
           </div>
         </div>
 
-        <!-- AI Investigation Report Card -->
-        <div class="panel-card">
-          <div class="panel-header">
-            <h3>Grounded AI Investigation Report (Gemini API)</h3>
-            <button class="btn-primary" style="padding: 0.3rem 0.8rem; font-size: 0.75rem;" onclick="reRunInvestigation()">Re-analyze with Gemini</button>
+        <!-- TAB 2: Transaction Ledger Table -->
+        <div class="tab-content hidden" id="tab-ledger">
+          <div class="panel-card glass-card">
+            <div class="panel-header">
+              <h3>Customer Transaction History Ledger</h3>
+              <span style="font-size: 0.8rem; color: var(--text-muted);" id="txn-ledger-count">0 Transactions</span>
+            </div>
+            <div class="table-responsive">
+              <table class="ledger-table">
+                <thead>
+                  <tr>
+                    <th>Txn ID</th>
+                    <th>Date & Time</th>
+                    <th>Description / Payee</th>
+                    <th>Channel</th>
+                    <th>Amount</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody id="ledger-table-body">
+                  <!-- Ledger rows populated dynamically -->
+                </tbody>
+              </table>
+            </div>
           </div>
-          <div class="report-content" id="report-markdown-body">
-            Loading investigation report...
+        </div>
+
+        <!-- TAB 3: AI Investigation Report -->
+        <div class="tab-content hidden" id="tab-report">
+          <div class="panel-card glass-card">
+            <div class="panel-header">
+              <h3>Grounded AI Investigation Report (Gemini API)</h3>
+              <button class="btn-primary glow-button" style="padding: 0.35rem 0.9rem; font-size: 0.75rem;" onclick="reRunInvestigation()">Re-analyze with Gemini</button>
+            </div>
+            <div class="report-content" id="report-markdown-body">
+              Loading investigation report...
+            </div>
+          </div>
+        </div>
+
+        <!-- TAB 4: Audit Log -->
+        <div class="tab-content hidden" id="tab-audit">
+          <div class="panel-card glass-card">
+            <div class="panel-header">
+              <h3>Investigator Audit Trail</h3>
+              <span class="track-badge">Compliance Record</span>
+            </div>
+            <div id="audit-log-container">
+              <p style="color:var(--text-muted); font-size:0.85rem;">No decisions logged yet in this session.</p>
+            </div>
           </div>
         </div>
 
         <!-- Human Investigator Decision Workbench -->
-        <div class="panel-card workbench-card">
+        <div class="panel-card workbench-card glass-card">
           <div class="panel-header">
             <h3>Human Investigator Decision Workbench</h3>
             <span style="font-size: 0.75rem; color: var(--text-dim);">Human-in-the-Loop Audit Protocol</span>
@@ -171,7 +253,7 @@
 
   <!-- Custom Ledger Modal -->
   <div class="modal-overlay hidden" id="custom-modal">
-    <div class="modal-content">
+    <div class="modal-content glass-card animate-pop">
       <div class="panel-header">
         <h3>Custom Transaction History Sandbox</h3>
         <button style="background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:1.2rem;" onclick="closeCustomModal()">✕</button>
@@ -182,7 +264,7 @@
       <textarea class="notes-input" id="custom-json-input" rows="10" style="font-family: var(--font-mono); font-size: 0.8rem;"></textarea>
       <div style="display:flex; justify-content:space-between; margin-top: 1rem;">
         <button class="btn-action verify" style="width: auto; padding: 0.5rem 1rem;" onclick="loadPresetJSON()">Load Preset Sample</button>
-        <button class="btn-primary" onclick="submitCustomAnalysis()">Analyze Custom Ledger</button>
+        <button class="btn-primary glow-button" onclick="submitCustomAnalysis()">Analyze Custom Ledger</button>
       </div>
     </div>
   </div>
