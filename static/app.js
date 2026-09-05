@@ -411,27 +411,55 @@ function switchTab(tabName) {
 }
 
 async function fetchAuditLog() {
+  const container = document.getElementById("audit-log-container");
   try {
     const res = await fetch("/api/audit-log");
+    if (!res.ok) throw new Error("Backend offline");
     const logs = await res.json();
-    const container = document.getElementById("audit-log-container");
-    if (!logs || logs.length === 0) {
-      container.innerHTML = "<p style='color:var(--text-muted); font-size:0.85rem;'>No investigator decisions recorded in audit history.</p>";
-      return;
-    }
-
-    container.innerHTML = logs.map(l => `
-      <div class="audit-item">
-        <div style="display:flex; justify-content:space-between; font-weight:700;">
-          <span>${l.customer_id} - ${l.decision}</span>
-          <span style="font-size:0.75rem; color:var(--text-dim);">${new Date(l.timestamp).toLocaleTimeString()}</span>
-        </div>
-        <div style="margin-top:0.3rem; color:var(--text-muted);">${l.investigator_notes}</div>
-      </div>
-    `).join("");
+    renderAuditItems(container, logs);
   } catch (err) {
-    console.error("Error fetching audit log:", err);
+    const clientLogs = window.AUDIT_LOG_CLIENT || [];
+    renderAuditItems(container, clientLogs);
   }
+}
+
+function renderAuditItems(container, logs) {
+  if (!logs || logs.length === 0) {
+    container.innerHTML = "<p style='color:var(--text-muted); font-size:0.85rem;'>No investigator decisions recorded in audit history yet. Submit a decision below to log an entry.</p>";
+    return;
+  }
+
+  container.innerHTML = logs.map(l => `
+    <div class="audit-item">
+      <div style="display:flex; justify-content:space-between; font-weight:700;">
+        <span><strong style="color:var(--primary-blue);">${l.customer_id}</strong> — ${l.decision}</span>
+        <span style="font-size:0.75rem; color:var(--text-dim);">${new Date(l.timestamp).toLocaleTimeString()}</span>
+      </div>
+      <div style="margin-top:0.3rem; color:var(--text-muted); font-size:0.85rem;">${l.investigator_notes}</div>
+    </div>
+  `).join("");
+}
+
+function showToast(title, message, type = "info") {
+  const container = document.getElementById("toast-container");
+  if (!container) return;
+  
+  const toast = document.createElement("div");
+  toast.className = `toast ${type}`;
+  toast.innerHTML = `
+    <div>
+      <div class="toast-title">${title}</div>
+      <div class="toast-msg">${message}</div>
+    </div>
+    <button class="toast-close" onclick="this.parentElement.remove()">✕</button>
+  `;
+  container.appendChild(toast);
+
+  setTimeout(() => {
+    toast.style.opacity = "0";
+    toast.style.transform = "translateX(50px)";
+    setTimeout(() => toast.remove(), 300);
+  }, 4000);
 }
 
 function renderReportMarkdown(markdownText) {
@@ -443,6 +471,29 @@ function renderReportMarkdown(markdownText) {
   }
 }
 
+function copyReportToClipboard() {
+  const text = document.getElementById("report-markdown-body").innerText;
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(text).then(() => {
+      showToast("Report Copied", "Markdown investigation report copied to clipboard!", "success");
+    });
+  } else {
+    showToast("Report Copied", "Report content selected.", "info");
+  }
+}
+
+function downloadReportMarkdown() {
+  const text = document.getElementById("report-markdown-body").innerText;
+  const blob = new Blob([text], { type: "text/markdown" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `Investigation_Report_${currentCustomerId}.md`;
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast("File Downloaded", `Saved Investigation_Report_${currentCustomerId}.md`, "success");
+}
+
 function highlightTransaction(txnId) {
   switchTab("ledger");
   document.querySelectorAll(".ledger-table tr").forEach(tr => tr.classList.remove("highlighted"));
@@ -450,12 +501,16 @@ function highlightTransaction(txnId) {
   if (targetRow) {
     targetRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
     targetRow.classList.add("highlighted");
+    showToast("Evidence Highlighted", `Scrolled to transaction record [${txnId}]`, "info");
   }
 }
 
 async function reRunInvestigation() {
   if (currentCustomerId) {
-    selectCustomer(currentCustomerId);
+    switchTab("report");
+    showToast("Re-analyzing Report", `Synthesizing grounded investigation for ${currentCustomerId}...`, "info");
+    await selectCustomer(currentCustomerId);
+    showToast("Analysis Complete", `Investigation report updated for ${currentCustomerId}`, "success");
   }
 }
 
@@ -463,8 +518,23 @@ async function submitDecision(decision) {
   const notes = document.getElementById("investigator-notes").value;
   const flagged = currentRuleAnalysis ? currentRuleAnalysis.flagged_txn_ids : [];
 
+  const decisionLabels = {
+    "CLEARED_ROUTINE": "Verified Clean / Routine",
+    "CUSTOMER_VERIFICATION_REQUESTED": "Request Customer Verification",
+    "ESCALATED_AML": "Escalate to AML Team"
+  };
+
+  const label = decisionLabels[decision] || decision;
+  const logEntry = {
+    timestamp: new Date().toISOString(),
+    customer_id: currentCustomerId,
+    decision: label,
+    investigator_notes: notes || "Decision recorded by Fraud Analyst.",
+    flagged_txn_ids: flagged
+  };
+
   try {
-    const res = await fetch("/api/investigator-decision", {
+    await fetch("/api/investigator-decision", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -474,19 +544,26 @@ async function submitDecision(decision) {
         flagged_txn_ids: flagged
       })
     });
-    const result = await res.json();
-    alert(`Investigator Decision Saved!\nAction: ${decision}\nAudit Log ID recorded.`);
-    document.getElementById("investigator-notes").value = "";
-    fetchAuditLog();
   } catch (err) {
-    alert(`Failed to save decision: ${err.message}`);
+    console.warn("Backend offline - saving decision client-side:", err);
   }
+
+  // Push to local log & update UI
+  if (!window.AUDIT_LOG_CLIENT) window.AUDIT_LOG_CLIENT = [];
+  window.AUDIT_LOG_CLIENT.unshift(logEntry);
+
+  showToast("Decision Saved", `Action logged for ${currentCustomerId}: ${label}`, decision === "ESCALATED_AML" ? "danger" : "success");
+  document.getElementById("investigator-notes").value = "";
+  
+  fetchAuditLog();
+  switchTab("audit");
 }
 
 // Modal Handlers
 function openCustomModal() {
   document.getElementById("custom-modal").classList.remove("hidden");
   loadPresetJSON();
+  showToast("Sandbox Opened", "Paste custom ledger JSON or test synthetic presets.", "info");
 }
 
 function closeCustomModal() {

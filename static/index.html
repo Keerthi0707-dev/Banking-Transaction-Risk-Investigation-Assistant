@@ -12,6 +12,9 @@
 </head>
 <body>
 
+  <!-- Toast Notification Container -->
+  <div class="toast-container" id="toast-container"></div>
+
   <!-- Ambient Glowing Background Mesh -->
   <div class="bg-glow-mesh"></div>
 
@@ -208,7 +211,11 @@
           <div class="panel-card glass-card">
             <div class="panel-header">
               <h3>Grounded AI Investigation Report (Gemini API)</h3>
-              <button class="btn-primary glow-button" style="padding: 0.35rem 0.9rem; font-size: 0.75rem;" onclick="reRunInvestigation()">Re-analyze with Gemini</button>
+              <div style="display: flex; gap: 0.5rem; align-items: center;">
+                <button class="btn-action verify" style="width: auto; padding: 0.35rem 0.75rem; font-size: 0.75rem; font-weight: 600;" onclick="copyReportToClipboard()">📋 Copy Report</button>
+                <button class="btn-action clear" style="width: auto; padding: 0.35rem 0.75rem; font-size: 0.75rem; font-weight: 600;" onclick="downloadReportMarkdown()">📥 Download .md</button>
+                <button class="btn-primary glow-button" style="padding: 0.35rem 0.9rem; font-size: 0.75rem;" onclick="reRunInvestigation()">⚡ Re-analyze Report</button>
+              </div>
             </div>
             <div class="report-content" id="report-markdown-body">
               Loading investigation report...
