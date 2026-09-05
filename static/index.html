@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NexusTiq FraudDesk - Transaction Risk Investigation Assistant</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <!-- Markdown parser for rendering AI Investigation Reports -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+</head>
+<body>
+
+  <!-- Navbar Header -->
+  <header class="navbar">
+    <div class="brand">
+      <div class="brand-logo">FD</div>
+      <div>
+        <div class="brand-title">FraudDesk AI Assistant</div>
+        <span class="track-badge">TRACK_ID=PS06 • Banking Transaction Risk</span>
+      </div>
+    </div>
+    <div class="nav-actions">
+      <div class="status-pill">
+        <span class="status-dot"></span>
+        <span id="gemini-status">Gemini AI Grounded</span>
+      </div>
+      <button class="btn-primary" onclick="openCustomModal()">+ Custom Ledger Sandbox</button>
+    </div>
+  </header>
+
+  <main class="dashboard-container">
+    
+    <!-- Top Overview Stats -->
+    <section class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-info">
+          <div class="stat-label">Total Accounts</div>
+          <div class="stat-value" id="stat-total-accounts">5</div>
+        </div>
+        <div class="stat-icon blue">🏦</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-info">
+          <div class="stat-label">Routine / Clean</div>
+          <div class="stat-value" id="stat-clean-accounts">1</div>
+        </div>
+        <div class="stat-icon green">✅</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-info">
+          <div class="stat-label">High Risk Flags</div>
+          <div class="stat-value" id="stat-flagged-accounts">3</div>
+        </div>
+        <div class="stat-icon red">⚠️</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-info">
+          <div class="stat-label">Needs Escalation</div>
+          <div class="stat-value" id="stat-escalated-accounts">1</div>
+        </div>
+        <div class="stat-icon purple">⚖️</div>
+      </div>
+    </section>
+
+    <!-- Main Grid Workspace -->
+    <div class="main-grid">
+      
+      <!-- Left Column: Accounts List & Customer Baseline -->
+      <div class="customer-sidebar">
+        <div class="section-title">
+          <span>Customer Accounts</span>
+          <span style="font-size: 0.8rem; color: var(--text-muted);" id="account-count-label">Select to Investigate</span>
+        </div>
+        
+        <div class="customer-list" id="customer-list-container">
+          <!-- Populated dynamically -->
+        </div>
+
+        <!-- Selected Customer Baseline Card -->
+        <div class="panel-card" style="margin-top: 0.5rem;" id="baseline-summary-card">
+          <div class="panel-header">
+            <h3 style="font-size: 0.95rem; font-weight: 600;">Customer Baseline Profile</h3>
+            <span class="customer-id" id="baseline-cid">CUST-101</span>
+          </div>
+          <div style="font-size: 0.85rem; color: var(--text-muted);" id="baseline-details">
+            Select a customer from above to review historical spending baseline and rules analysis.
+          </div>
+        </div>
+      </div>
+
+      <!-- Right Column: AI Risk Investigation Workspace -->
+      <div class="investigation-panel">
+
+        <!-- Executive Determination Banner -->
+        <div class="determination-banner clean" id="determination-banner">
+          <div class="determination-text">
+            <h3 id="det-title">NO SUSPICIOUS ACTIVITY DETECTED</h3>
+            <p id="det-subtitle">Account activity is consistent with historical baseline spending patterns.</p>
+          </div>
+          <div class="score-badge" id="det-score">0 / 100</div>
+        </div>
+
+        <!-- Triggered Rules Section -->
+        <div class="panel-card hidden" id="rules-card">
+          <div class="panel-header">
+            <h3>Triggered Risk Rules & Direct Evidence</h3>
+            <span class="track-badge" id="rule-count-badge">0 Rules Hit</span>
+          </div>
+          <div class="rules-container" id="rules-list">
+            <!-- Rules dynamically populated -->
+          </div>
+        </div>
+
+        <!-- Transaction Ledger Table -->
+        <div class="panel-card">
+          <div class="panel-header">
+            <h3>Customer Transaction History Ledger</h3>
+            <span style="font-size: 0.8rem; color: var(--text-muted);" id="txn-ledger-count">0 Transactions</span>
+          </div>
+          <div class="table-responsive">
+            <table class="ledger-table">
+              <thead>
+                <tr>
+                  <th>Txn ID</th>
+                  <th>Date & Time</th>
+                  <th>Description / Payee</th>
+                  <th>Channel</th>
+                  <th>Amount</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="ledger-table-body">
+                <!-- Ledger rows populated dynamically -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- AI Investigation Report Card -->
+        <div class="panel-card">
+          <div class="panel-header">
+            <h3>Grounded AI Investigation Report (Gemini API)</h3>
+            <button class="btn-primary" style="padding: 0.3rem 0.8rem; font-size: 0.75rem;" onclick="reRunInvestigation()">Re-analyze with Gemini</button>
+          </div>
+          <div class="report-content" id="report-markdown-body">
+            Loading investigation report...
+          </div>
+        </div>
+
+        <!-- Human Investigator Decision Workbench -->
+        <div class="panel-card workbench-card">
+          <div class="panel-header">
+            <h3>Human Investigator Decision Workbench</h3>
+            <span style="font-size: 0.75rem; color: var(--text-dim);">Human-in-the-Loop Audit Protocol</span>
+          </div>
+          <p style="font-size: 0.85rem; color: var(--text-muted);">
+            The AI assistant flags risk patterns and cites exact evidence. Final decision rests with the investigator.
+          </p>
+          <textarea class="notes-input" id="investigator-notes" rows="2" placeholder="Enter investigator rationale, customer contact findings, or audit notes..."></textarea>
+          <div class="action-buttons">
+            <button class="btn-action clear" onclick="submitDecision('CLEARED_ROUTINE')">✓ Verified Clean / Routine</button>
+            <button class="btn-action verify" onclick="submitDecision('CUSTOMER_VERIFICATION_REQUESTED')">❓ Request Customer Verification</button>
+            <button class="btn-action escalate" onclick="submitDecision('ESCALATED_AML')">🚨 Escalate to AML Team</button>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+  </main>
+
+  <!-- Custom Ledger Modal -->
+  <div class="modal-overlay hidden" id="custom-modal">
+    <div class="modal-content">
+      <div class="panel-header">
+        <h3>Custom Transaction History Sandbox</h3>
+        <button style="background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:1.2rem;" onclick="closeCustomModal()">✕</button>
+      </div>
+      <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1rem;">
+        Paste custom transaction JSON or select a synthetic anomaly preset to evaluate in real-time.
+      </p>
+      <textarea class="notes-input" id="custom-json-input" rows="10" style="font-family: var(--font-mono); font-size: 0.8rem;"></textarea>
+      <div style="display:flex; justify-content:space-between; margin-top: 1rem;">
+        <button class="btn-action verify" style="width: auto; padding: 0.5rem 1rem;" onclick="loadPresetJSON()">Load Preset Sample</button>
+        <button class="btn-primary" onclick="submitCustomAnalysis()">Analyze Custom Ledger</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
