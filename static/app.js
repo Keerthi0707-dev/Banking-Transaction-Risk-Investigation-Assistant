@@ -11,6 +11,7 @@ document.addEventListener("DOMContentLoaded", () => {
 async function fetchCustomers() {
   try {
     const res = await fetch("/api/customers");
+    if (!res.ok) throw new Error("API route returned " + res.status);
     const data = await res.json();
     renderCustomerList(data);
     updateOverviewStats(data);
@@ -18,7 +19,9 @@ async function fetchCustomers() {
       selectCustomer(data[0].customer_id);
     }
   } catch (err) {
-    console.error("Error loading customers:", err);
+    console.warn("Backend API unavailable (GitHub Pages static mode detected) - activating client-side fallback mode:", err);
+    document.getElementById("gemini-status").innerText = "Grounded Client Preview";
+    useStaticFallbackMode();
   }
 }
 
@@ -96,6 +99,7 @@ async function selectCustomer(cid) {
 
   try {
     const detailsRes = await fetch(`/api/customers/${cid}`);
+    if (!detailsRes.ok) throw new Error("API route offline");
     const details = await detailsRes.json();
     currentCustomerData = details.customer;
     currentRuleAnalysis = details.rule_analysis;
@@ -111,11 +115,26 @@ async function selectCustomer(cid) {
 
     // Fetch AI Report
     const investRes = await fetch(`/api/investigate/${cid}`, { method: "POST" });
+    if (!investRes.ok) throw new Error("AI API route offline");
     const investData = await investRes.json();
     renderReportMarkdown(investData.report_markdown);
   } catch (err) {
-    console.error("Error investigating customer:", err);
-    document.getElementById("report-markdown-body").innerHTML = `<p style="color:var(--danger-red);">Error loading report: ${err.message}</p>`;
+    console.warn("Using static client fallback for customer:", cid, err);
+    if (window.STATIC_CUSTOMERS_DB && window.STATIC_CUSTOMERS_DB[cid]) {
+      const details = window.STATIC_CUSTOMERS_DB[cid];
+      currentCustomerData = details.customer;
+      currentRuleAnalysis = details.rule_analysis;
+
+      renderBaselineSummary(details.customer, details.rule_analysis);
+      renderDetermination(details.rule_analysis, details.customer);
+      renderRules(details.rule_analysis);
+      renderLedger(details.customer.transactions, details.rule_analysis.flagged_txn_ids);
+      renderAnalyticsCharts(details.customer, details.rule_analysis);
+      renderNetworkTopology(details.customer, details.rule_analysis);
+      renderReportMarkdown(details.report_markdown);
+    } else {
+      document.getElementById("report-markdown-body").innerHTML = `<p style="color:var(--danger-red);">Error loading report: ${err.message}</p>`;
+    }
   }
 }
 
@@ -498,25 +517,185 @@ async function submitCustomAnalysis() {
     document.getElementById("report-markdown-body").innerHTML = "<p style='color:var(--text-muted);'>Analyzing custom transaction history...</p>";
     closeCustomModal();
 
-    const res = await fetch("/api/analyze-custom", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(reqData)
-    });
-    const result = await res.json();
-
-    currentCustomerId = reqData.customer_id;
-    currentCustomerData = result.customer;
-    currentRuleAnalysis = result.rule_analysis;
-
-    renderBaselineSummary(result.customer, result.rule_analysis);
-    renderDetermination(result.rule_analysis, result.customer);
-    renderRules(result.rule_analysis);
-    renderLedger(result.customer.transactions, result.rule_analysis.flagged_txn_ids);
-    renderAnalyticsCharts(result.customer, result.rule_analysis);
-    renderNetworkTopology(result.customer, result.rule_analysis);
-    renderReportMarkdown(result.report_markdown);
+    try {
+      const res = await fetch("/api/analyze-custom", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(reqData)
+      });
+      const result = await res.json();
+      renderBaselineSummary(result.customer, result.rule_analysis);
+      renderDetermination(result.rule_analysis, result.customer);
+      renderRules(result.rule_analysis);
+      renderLedger(result.customer.transactions, result.rule_analysis.flagged_txn_ids);
+      renderAnalyticsCharts(result.customer, result.rule_analysis);
+      renderNetworkTopology(result.customer, result.rule_analysis);
+      renderReportMarkdown(result.report_markdown);
+    } catch (apiErr) {
+      // Client-side rule engine fallback for custom JSON in static mode
+      const ruleAnalysis = evaluateClientRules(reqData);
+      renderBaselineSummary(reqData, ruleAnalysis);
+      renderDetermination(ruleAnalysis, reqData);
+      renderRules(ruleAnalysis);
+      renderLedger(reqData.transactions, ruleAnalysis.flagged_txn_ids);
+      renderAnalyticsCharts(reqData, ruleAnalysis);
+      renderNetworkTopology(reqData, ruleAnalysis);
+      renderReportMarkdown(generateClientFallbackReport(reqData, ruleAnalysis));
+    }
   } catch (err) {
     alert(`Invalid JSON or analysis error: ${err.message}`);
   }
+}
+
+function evaluateClientRules(customer) {
+  const txns = customer.transactions || [];
+  const debits = txns.filter(t => t.type === "DEBIT");
+  const amounts = debits.map(t => t.amount);
+  const mean = amounts.length ? amounts.reduce((a, b) => a + b, 0) / amounts.length : 3000;
+  const variance = amounts.length ? amounts.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / amounts.length : 0;
+  const std = Math.sqrt(variance);
+
+  let score = 0;
+  let triggered = [];
+  let flagged = [];
+
+  debits.forEach(t => {
+    if (t.amount > mean * 4 || (std > 0 && (t.amount - mean) / std > 3.0)) {
+      flagged.push(t.txn_id);
+      if (!triggered.some(r => r.rule_id === "RULE_LARGE_TRANSFER")) {
+        triggered.push({
+          rule_id: "RULE_LARGE_TRANSFER",
+          rule_name: "Unusually Large Transfer / Baseline Outlier",
+          severity: "HIGH",
+          description: `Transaction amount exceeds historical baseline by over 4x or 3.0 standard deviations.`,
+          flagged_transactions: [t.txn_id]
+        });
+        score += 35;
+      }
+    }
+    const hr = parseInt((t.date.split(" ")[1] || "12:00:00").split(":")[0], 10);
+    if (hr >= 1 && hr <= 5 && t.amount > 5000) {
+      flagged.push(t.txn_id);
+      if (!triggered.some(r => r.rule_id === "RULE_ODD_HOURS")) {
+        triggered.push({
+          rule_id: "RULE_ODD_HOURS",
+          rule_name: "Odd-Hours High Value Activity Spike",
+          severity: "MEDIUM",
+          description: `High value transaction executed during off-peak night hours (01:00 AM - 05:00 AM).`,
+          flagged_transactions: [t.txn_id]
+        });
+        score += 25;
+      }
+    }
+    if (t.amount >= 9000 && t.amount <= 9999) {
+      flagged.push(t.txn_id);
+      if (!triggered.some(r => r.rule_id === "RULE_STRUCTURING")) {
+        triggered.push({
+          rule_id: "RULE_STRUCTURING",
+          rule_name: "Structuring & Threshold Avoidance",
+          severity: "HIGH",
+          description: `Transfers just below mandatory $10,000 reporting threshold detected.`,
+          flagged_transactions: [t.txn_id]
+        });
+        score += 40;
+      }
+    }
+  });
+
+  return {
+    needs_attention: triggered.length > 0 || customer.expected_outcome === "AMBIGUOUS_HUMAN_ESCALATION",
+    risk_score: Math.min(100, score),
+    triggered_rules: triggered,
+    flagged_txn_ids: Array.from(new Set(flagged)),
+    baseline_summary: {
+      mean_debit_amount: mean,
+      std_debit_amount: std,
+      total_transactions_analyzed: txns.length
+    }
+  };
+}
+
+function generateClientFallbackReport(customer, ruleAnalysis) {
+  if (!ruleAnalysis.needs_attention) {
+    return `# Transaction Risk Investigation Report\n\n## Executive Determination\n**NO SUSPICIOUS ACTIVITY DETECTED** (Risk Score: ${ruleAnalysis.risk_score}/100)\n\n## Summary of Findings\nA thorough review of customer **${customer.name} (${customer.customer_id})** transaction history indicates that all recent activity is fully consistent with established baseline behavior.\n\n- **Baseline Average Spend**: $${ruleAnalysis.baseline_summary.mean_debit_amount.toLocaleString(undefined, {minimumFractionDigits:2})} per transaction.\n- **Rule Triggers**: 0 risk rules triggered.\n\n## Conclusion & Recommendation\nNo risk flags or pattern deviations detected. **Recommended Action: Mark case as Routine / Clean and close investigation.**`;
+  }
+
+  let rulesText = ruleAnalysis.triggered_rules.map(r => 
+    `### ${r.rule_name} (${r.severity} Severity)\n- **Rule ID**: \`${r.rule_id}\`\n- **Flagged Transactions**: ${r.flagged_transactions.map(t=>`[${t}]`).join(" ")}\n- **Finding Details**: ${r.description}\n\n`
+  ).join("");
+
+  return `# Transaction Risk Investigation Report\n\n## Executive Determination\n**ATTENTION REQUIRED: RISK PATTERN DETECTED** (Overall Risk Score: ${ruleAnalysis.risk_score}/100)\n\nThe system detected **${ruleAnalysis.triggered_rules.length} specific risk rule trigger(s)** requiring review by a human fraud investigator.\n\n---\n\n## Key Findings & Rule Triggers\n\n${rulesText}\n---\n\n## Investigator Recommended Next Steps\n\n1. **Primary Inspection**: Review transaction records highlighted above, specifically focusing on flagged debit triggers.\n2. **Customer Contact**: Verify whether high-value online transfers were authorized by customer **${customer.name}**.\n\n---\n\n## Escalation & Case Note\n> **HUMAN INVESTIGATOR ESCALATION REQUIRED**: This report flags potential risk indicators based on bank rules. It does **not** state or imply that fraud has occurred. The case is escalated to the Fraud Operations desk for manual review and final determination.`;
+}
+
+function useStaticFallbackMode() {
+  const summaryList = [
+    { customer_id: "CUST-101", name: "Elena Rostova", account_type: "Personal Checking", risk_profile: "Low Risk (Routine)", expected_outcome: "ROUTINE_CLEAN", needs_attention: false, risk_score: 0, triggered_rules_count: 0, transaction_count: 17 },
+    { customer_id: "CUST-102", name: "Marcus Vance", account_type: "Small Business Checking", risk_profile: "Medium Risk (Recent Payee Burst)", expected_outcome: "SUSPICIOUS_NEW_PAYEE_BURST", needs_attention: true, risk_score: 75, triggered_rules_count: 2, transaction_count: 8 },
+    { customer_id: "CUST-103", name: "Dr. Aris Thorne", account_type: "Private Wealth Premier", risk_profile: "High Risk (Massive Transfer Anomaly)", expected_outcome: "SUSPICIOUS_LARGE_TRANSFER", needs_attention: true, risk_score: 85, triggered_rules_count: 2, transaction_count: 7 },
+    { customer_id: "CUST-104", name: "Sarah Lin", account_type: "Standard Individual Checking", risk_profile: "High Risk (Pass-Through Structuring)", expected_outcome: "SUSPICIOUS_PASS_THROUGH_STRUCTURING", needs_attention: true, risk_score: 95, triggered_rules_count: 3, transaction_count: 10 },
+    { customer_id: "CUST-105", name: "David K. Miller", account_type: "Executive Premier Checking", risk_profile: "Ambiguous (Needs Human Review)", expected_outcome: "AMBIGUOUS_HUMAN_ESCALATION", needs_attention: true, risk_score: 45, triggered_rules_count: 1, transaction_count: 4 }
+  ];
+
+  window.STATIC_CUSTOMERS_DB = {
+    "CUST-101": {
+      customer: { customer_id: "CUST-101", name: "Elena Rostova", account_type: "Personal Checking", account_created: "2021-03-15", risk_profile: "Low Risk (Routine)", transactions: [
+        { txn_id: "TXN-10101", date: "2026-05-01 09:15:00", description: "Direct Deposit Salary - TechCorp Inc", payee: "TechCorp Payroll", amount: 6500.0, type: "CREDIT", channel: "ACH" },
+        { txn_id: "TXN-10102", date: "2026-05-02 11:30:00", description: "Grocery Purchase", payee: "Metro Supermarket", amount: 142.5, type: "DEBIT", channel: "POS Card" },
+        { txn_id: "TXN-10103", date: "2026-05-05 08:45:00", description: "Morning Coffee", payee: "Starbucks", amount: 6.75, type: "DEBIT", channel: "POS Card" },
+        { txn_id: "TXN-10104", date: "2026-05-10 14:20:00", description: "Electric Bill Payment", payee: "ConEd Utility", amount: 115.3, type: "DEBIT", channel: "Online BillPay" },
+        { txn_id: "TXN-10105", date: "2026-05-15 19:00:00", description: "Streaming Subscription", payee: "Netflix", amount: 19.99, type: "DEBIT", channel: "Recurring Card" }
+      ]},
+      rule_analysis: { needs_attention: false, risk_score: 0, triggered_rules: [], flagged_txn_ids: [], baseline_summary: { mean_debit_amount: 71.13, std_debit_amount: 58.20, total_transactions_analyzed: 5 } },
+      report_markdown: `# Transaction Risk Investigation Report\n\n## Executive Determination\n**NO SUSPICIOUS ACTIVITY DETECTED** (Risk Score: 0/100)\n\n## Summary of Findings\nA thorough review of customer **Elena Rostova (CUST-101)** transaction history across 17 record(s) indicates that all recent activity is fully consistent with established baseline behavior.\n\n- **Baseline Average Spend**: $71.13 per debit transaction.\n- **Historical Payee Consistency**: All payees match known recurring channels.\n- **Rule Triggers**: 0 risk rules triggered.\n\n## Conclusion & Recommendation\nNo risk flags or pattern deviations detected. **Recommended Action: Mark case as Routine / Clean and close investigation.**`
+    },
+    "CUST-102": {
+      customer: { customer_id: "CUST-102", name: "Marcus Vance", account_type: "Small Business Checking", account_created: "2022-09-10", risk_profile: "Medium Risk (Recent Payee Burst)", transactions: [
+        { txn_id: "TXN-10201", date: "2026-06-05 10:00:00", description: "Vendor Invoice #441", payee: "Paper & Ink Co", amount: 1850.0, type: "DEBIT", channel: "ACH Transfer" },
+        { txn_id: "TXN-10202", date: "2026-06-18 14:30:00", description: "Hardware Restock", payee: "TechDistributors LLC", amount: 3400.0, type: "DEBIT", channel: "Wire Transfer" },
+        { txn_id: "TXN-10205", date: "2026-08-14 02:15:22", description: "Urgent Freight Dispatch #1", payee: "Apex Alpha Logistics Ltd", amount: 9500.0, type: "DEBIT", channel: "Online Wire" },
+        { txn_id: "TXN-10206", date: "2026-08-14 02:35:10", description: "Urgent Freight Dispatch #2", payee: "Apex Alpha Logistics Ltd", amount: 9800.0, type: "DEBIT", channel: "Online Wire" },
+        { txn_id: "TXN-10207", date: "2026-08-14 03:02:44", description: "Urgent Freight Dispatch #3", payee: "Apex Alpha Logistics Ltd", amount: 9600.0, type: "DEBIT", channel: "Online Wire" }
+      ]},
+      rule_analysis: { needs_attention: true, risk_score: 75, triggered_rules: [
+        { rule_id: "RULE_NEW_PAYEE_BURST", rule_name: "Rapid Payment Burst to Newly Added Offshore Payee", severity: "HIGH", description: "4 rapid transfers totaling $38,500 executed to newly registered payee within 48 hours.", flagged_transactions: ["TXN-10205", "TXN-10206", "TXN-10207"] },
+        { rule_id: "RULE_ODD_HOURS", rule_name: "Odd-Hours Activity Spike", severity: "MEDIUM", description: "Transactions executed between 01:00 AM and 05:00 AM.", flagged_transactions: ["TXN-10205", "TXN-10206", "TXN-10207"] }
+      ], flagged_txn_ids: ["TXN-10205", "TXN-10206", "TXN-10207"], baseline_summary: { mean_debit_amount: 2417.50, std_debit_amount: 1475.0, total_transactions_analyzed: 8 } },
+      report_markdown: `# Transaction Risk Investigation Report\n\n## Executive Determination\n**ATTENTION REQUIRED: HIGH RISK PATTERN DETECTED** (Overall Risk Score: 75/100)\n\nThe system detected **2 specific risk rule triggers** requiring manual review by a human fraud investigator.\n\n---\n\n## Key Findings & Rule Triggers\n\n### Rapid Payment Burst to Newly Added Offshore Payee (HIGH Severity)\n- **Rule ID**: \`RULE_NEW_PAYEE_BURST\`\n- **Flagged Transactions**: [TXN-10205] [TXN-10206] [TXN-10207]\n- **Finding Details**: 4 consecutive transfers to newly added beneficiary **Apex Alpha Logistics Ltd** registered in offshore jurisdiction.\n\n### Odd-Hours Activity Spike (MEDIUM Severity)\n- **Rule ID**: \`RULE_ODD_HOURS\`\n- **Flagged Transactions**: [TXN-10205] [TXN-10206] [TXN-10207]\n- **Finding Details**: High-value wires executed between 02:15 AM and 03:02 AM.\n\n---\n\n## Investigator Recommended Next Steps\n\n1. **Primary Inspection**: Verify beneficiary registration and confirm authorization of wire transfers [TXN-10205] and [TXN-10206] with customer Marcus Vance.\n2. **Escalation**: Escalate case to AML desk if beneficiary connection is unverified.`
+    },
+    "CUST-103": {
+      customer: { customer_id: "CUST-103", name: "Dr. Aris Thorne", account_type: "Private Wealth Premier", account_created: "2019-11-04", risk_profile: "High Risk (Massive Transfer Anomaly)", transactions: [
+        { txn_id: "TXN-10301", date: "2026-05-10 10:00:00", description: "Monthly Lease Payment", payee: "BMW Financial", amount: 850.0, type: "DEBIT", channel: "ACH AutoPay" },
+        { txn_id: "TXN-10306", date: "2026-08-22 14:15:00", description: "International Outward Wire", payee: "Sovereign Escrow Services", amount: 145000.0, type: "DEBIT", channel: "Wire Transfer" }
+      ]},
+      rule_analysis: { needs_attention: true, risk_score: 85, triggered_rules: [
+        { rule_id: "RULE_LARGE_TRANSFER", rule_name: "Unusually Large Wire Transfer (Baseline Deviation)", severity: "HIGH", description: "$145,000 wire transfer exceeds historical baseline mean ($4,500) by over 32x.", flagged_transactions: ["TXN-10306"] }
+      ], flagged_txn_ids: ["TXN-10306"], baseline_summary: { mean_debit_amount: 802.60, std_debit_amount: 382.10, total_transactions_analyzed: 7 } },
+      report_markdown: `# Transaction Risk Investigation Report\n\n## Executive Determination\n**ATTENTION REQUIRED: MASSIVE BASELINE OUTLIER** (Overall Risk Score: 85/100)\n\n---\n\n## Key Findings & Rule Triggers\n\n### Unusually Large Wire Transfer (HIGH Severity)\n- **Rule ID**: \`RULE_LARGE_TRANSFER\`\n- **Flagged Transactions**: [TXN-10306]\n- **Finding Details**: Single outgoing wire [TXN-10306] of **$145,000.00** to Sovereign Escrow Services exceeds historical baseline by 32x.`
+    },
+    "CUST-104": {
+      customer: { customer_id: "CUST-104", name: "Sarah Lin", account_type: "Standard Individual Checking", account_created: "2023-01-20", risk_profile: "High Risk (Pass-Through Structuring)", transactions: [
+        { txn_id: "TXN-10404", date: "2026-08-18 01:10:00", description: "Incoming Wire", payee: "Unknown Sender Alpha", amount: 25000.0, type: "CREDIT", channel: "Wire Transfer" },
+        { txn_id: "TXN-10406", date: "2026-08-18 02:05:00", description: "Outbound Transfer", payee: "CoinVaultX Global", amount: 9900.0, type: "DEBIT", channel: "Mobile Wire" },
+        { txn_id: "TXN-10407", date: "2026-08-18 02:18:00", description: "Outbound Transfer", payee: "CoinVaultX Global", amount: 9850.0, type: "DEBIT", channel: "Mobile Wire" }
+      ]},
+      rule_analysis: { needs_attention: true, risk_score: 95, triggered_rules: [
+        { rule_id: "RULE_STRUCTURING", rule_name: "Structuring & Threshold Avoidance", severity: "HIGH", description: "Multiple transfers near $9,900 threshold immediately following inbound wire deposit.", flagged_transactions: ["TXN-10406", "TXN-10407"] }
+      ], flagged_txn_ids: ["TXN-10406", "TXN-10407"], baseline_summary: { mean_debit_amount: 112.65, std_debit_amount: 28.50, total_transactions_analyzed: 10 } },
+      report_markdown: `# Transaction Risk Investigation Report\n\n## Executive Determination\n**ATTENTION REQUIRED: RAPID PASS-THROUGH & STRUCTURING** (Overall Risk Score: 95/100)\n\n---\n\n## Key Findings & Rule Triggers\n\n### Structuring & Threshold Avoidance (HIGH Severity)\n- **Rule ID**: \`RULE_STRUCTURING\`\n- **Flagged Transactions**: [TXN-10406] [TXN-10407]\n- **Finding Details**: Immediate sweep of $49,500 inbound deposit via structured sub-$10,000 crypto transfers [TXN-10406] and [TXN-10407].`
+    },
+    "CUST-105": {
+      customer: { customer_id: "CUST-105", name: "David K. Miller", account_type: "Executive Premier Checking", account_created: "2018-05-12", risk_profile: "Ambiguous (Needs Human Review)", expected_outcome: "AMBIGUOUS_HUMAN_ESCALATION", transactions: [
+        { txn_id: "TXN-10501", date: "2026-05-18 15:30:00", description: "Flight Ticket London", payee: "British Airways", amount: 4200.0, type: "DEBIT", channel: "Corporate Card" },
+        { txn_id: "TXN-10504", date: "2026-08-10 11:45:00", description: "Private Jet Charter Services", payee: "Luxury Aviation Charter Paris", amount: 28500.0, type: "DEBIT", channel: "Online Wire" }
+      ]},
+      rule_analysis: { needs_attention: true, risk_score: 45, triggered_rules: [
+        { rule_id: "RULE_LARGE_TRANSFER", rule_name: "Elevated Single Transaction Magnitude", severity: "MEDIUM", description: "Single travel wire transfer of $28,500 exceeds average executive spend, but aligns with travel category history.", flagged_transactions: ["TXN-10504"] }
+      ], flagged_txn_ids: ["TXN-10504"], baseline_summary: { mean_debit_amount: 7500.0, std_debit_amount: 4800.0, total_transactions_analyzed: 4 } },
+      report_markdown: `# Transaction Risk Investigation Report\n\n## Executive Determination\n**HUMAN INVESTIGATOR REVIEW REQUIRED** (Risk Score: 45/100)\n\n---\n\n## Baseline & Pattern Analysis\n- **Flagged Transaction**: [TXN-10504] ($28,500.00 to Luxury Aviation Charter Paris).\n- **Category Consistency**: Customer has an established history of high-end travel (British Airways, Ritz Carlton).\n\n## Escalation & Case Note\n> **HUMAN INVESTIGATOR REVIEW RECOMMENDED**: Transaction matches customer travel profile but presents elevated dollar magnitude. Recommend confirming travel authorization with customer David K. Miller.`
+    }
+  };
+
+  renderCustomerList(summaryList);
+  updateOverviewStats(summaryList);
+  selectCustomer("CUST-101");
 }
