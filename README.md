@@ -32,6 +32,45 @@ The application uses Google Gemini for LLM reasoning and report synthesis.
 
 ---
 
+## 🏗️ System Architecture
+
+```
++-------------------------------------------------------------------+
+|               Multi-Month Customer Transaction History            |
+|                  (Date, Payee, Amount, Channel, Hours)            |
++-------------------------------------------------------------------+
+                                  |
+                                  v
++-------------------------------------------------------------------+
+|                    Deterministic Rule Engine                      |
+|  - Baseline Mean Spend & StdDev calculation                       |
+|  - Rule 1: Unusually Large Transfer (Z-Score > 3.0)              |
+|  - Rule 2: Bursts of Payments to New Payee (< 48 hrs)             |
+|  - Rule 3: Odd-Hours Activity Spikes (01:00 AM - 05:00 AM)        |
+|  - Rule 4: Structuring & Threshold Avoidance ($9,000 - $9,999)    |
++-------------------------------------------------------------------+
+                                  |
+                                  v
++-------------------------------------------------------------------+
+|                 Grounded Gemini AI Risk Investigator              |
+|  - First Finding Determination (NO SUSPICIOUS ACTIVITY vs ATTENTION)|
+|  - Exact Evidence Citations ([TXN-XXXXX])                        |
+|  - Historical Baseline Contrast & Anomaly Explanation             |
+|  - Strict Guardrails (Never claims fraud, Defers to Human)       |
++-------------------------------------------------------------------+
+                                  |
+                                  v
++-------------------------------------------------------------------+
+|               Interactive Fraud Desk Web Application              |
+|  - Visual Analytics & Flow (Chart.js + SVG Network Topology Graph)|
+|  - Animated SVG Radial Risk Gauge (0-100 Score Meter)            |
+|  - Searchable Transaction Ledger & Interactive Citation Inspection |
+|  - Human Investigator Decision Workbench & Audit Trail            |
++-------------------------------------------------------------------+
+```
+
+---
+
 ## 💡 Key Features & Architectural Highlights
 
 ### 1. First Finding Clarity & Clean Case Discipline
@@ -51,7 +90,7 @@ The application uses Google Gemini for LLM reasoning and report synthesis.
 
 ### 4. Interactive Fraud Operations Desk UI
 - **Multi-Customer Selection**: Switch between routine, flagged, and ambiguous customer profiles.
-- **Interactive Transaction Ledger**: Searchable, filterable transaction table with row-level risk highlighting.
+- **Interactive Visual Analytics**: Chart.js spending anomaly timeline area chart, time-of-day bar chart, and SVG beneficiary node graph.
 - **Custom Ledger Sandbox**: Paste custom JSON transaction histories to evaluate custom scenarios in real-time.
 - **Human Investigator Workbench**: Record audit decisions (`Verified Clean`, `Request Customer Verification`, `Escalate to AML Team`).
 
