@@ -7,8 +7,21 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
 
-from src.rule_engine import RuleEngine
-from src.gemini_investigator import GeminiInvestigator
+import sys
+
+# Ensure project root and src/ are on sys.path
+sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "src")))
+
+try:
+    from rule_engine import RuleEngine
+except ImportError:
+    from src.rule_engine import RuleEngine
+
+try:
+    from gemini_investigator import GeminiInvestigator
+except ImportError:
+    from src.gemini_investigator import GeminiInvestigator
 
 from contextlib import asynccontextmanager
 
@@ -22,7 +35,10 @@ investigator = GeminiInvestigator()
 def load_customers():
     global CUSTOMERS_DB
     if not os.path.exists(CUSTOMERS_FILE):
-        from src.sample_data import generate_sample_data
+        try:
+            from sample_data import generate_sample_data
+        except ImportError:
+            from src.sample_data import generate_sample_data
         generate_sample_data()
     
     with open(CUSTOMERS_FILE, "r") as f:
@@ -158,4 +174,4 @@ def read_root():
     return "<h1>Banking Transaction Risk Investigation Assistant (PS06) Running</h1>"
 
 if __name__ == "__main__":
-    uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=False)
+    uvicorn.run("app:app", host="127.0.0.1", port=8000, reload=False)

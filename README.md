@@ -116,7 +116,3 @@ python -m pytest tests/test_rule_engine.py
 ```
 
 ---
-
-## 🎥 Demo Video
-
-- **Video Link**: [Insert 2-3 minute YouTube/Loom demo video link here]

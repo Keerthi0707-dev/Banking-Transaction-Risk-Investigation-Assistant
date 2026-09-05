@@ -1,0 +1,13 @@
+[tool.pyrefly]
+project-root = "."
+search-path = ["."]
+search-paths = ["."]
+import-roots = ["."]
+ignore = ["**/__pyrefly_virtual__/**", "**/inmemory/**"]
+
+[tool.pyright]
+include = ["."]
+extraPaths = ["."]
+executionEnvironments = [
+  { root = "." }
+]

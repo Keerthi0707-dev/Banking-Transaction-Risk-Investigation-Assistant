@@ -1,7 +1,14 @@
 import pytest
 import json
 import os
-from src.rule_engine import RuleEngine
+import sys
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
+try:
+    from rule_engine import RuleEngine
+except ImportError:
+    from src.rule_engine import RuleEngine
 from fastapi.testclient import TestClient
 from app import app
 
